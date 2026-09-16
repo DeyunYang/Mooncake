@@ -39,15 +39,10 @@ class EngramStore {
     };
 
     EngramStore(const std::map<int, EngramStoreConfig>& layers,
-                std::shared_ptr<PyClient> store = nullptr);
+                std::shared_ptr<PyClient> store = nullptr,
+                const std::string& local_dir = "");
 
     ~EngramStore() = default;
-
-    // Bind immutable caller-owned tables before lookup, without a Store client.
-    // The caller must keep these buffers alive until this EngramStore is
-    // destroyed.
-    int bind_local(int layer_id, const std::vector<const void*>& buffers,
-                   const std::vector<size_t>& sizes);
 
     /**
      * Lookup embedding rows for a batch of precomputed row IDs.
@@ -87,7 +82,9 @@ class EngramStore {
     int remove_from_store(int layer_id, bool force = false);
 
     /**
-     * Populate Store with per-head embedding tensors.
+     * Create per-head tables in Store or owned local shared mappings.
+     * Local tables persist after this handle is destroyed. The caller may
+     * release the input buffers when this method returns successfully.
      * @param embedding_buffers Byte buffers for each head [N_h, row_bytes]
      * @param buffer_sizes Size in bytes for each buffer
      * @return 0 on success, negative on error
@@ -97,12 +94,14 @@ class EngramStore {
                  const ReplicateConfig& config = ReplicateConfig{});
 
    private:
-    std::shared_ptr<PyClient> store_;
+    struct LocalTables;
     struct QueryCacheEntry;
+    std::shared_ptr<PyClient> store_;
+    std::string local_dir_;
     struct Layer {
         EngramStoreConfig config;
         std::vector<std::string> keys;
-        std::vector<const void*> local_tables;
+        mutable std::shared_ptr<LocalTables> local_tables;
     };
     const Layer& get_layer(int layer_id) const;
     std::shared_ptr<const QueryCacheEntry> get_query_cache(
